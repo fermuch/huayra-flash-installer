@@ -4,6 +4,7 @@ import pygtk
 pygtk.require('2.0')
 import gtk
 import subprocess
+import threading
 
 notif = gtk.Label("""
 Esta aplicación va a instalar Adobe® Flash Player.
@@ -48,40 +49,58 @@ class FlashPlayerInstaller:
     vbox.pack_start(halign, False, False, 3)
 
     self.window.add(vbox)
-    
-
-
-
     self.window.show_all()
 
   def main(self):
+    gtk.gdk.threads_init()
     gtk.main()
 
   def destroy_window(self, widget=None, event=None, data=None):
+    gtk.gdk.threads_enter()
     gtk.main_quit()
-    return False # devolver 0
+    gtk.gdk.threads_leave()
+    return False
 
   def show_error(self, text):
+    gtk.gdk.threads_enter()
     md = gtk.MessageDialog(self.window, 
         gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_ERROR, 
         gtk.BUTTONS_CLOSE, text)
     md.run()
     md.destroy()
+    gtk.gdk.threads_leave()
 
   def show_success(self, text):
+    gtk.gdk.threads_enter()
     md = gtk.MessageDialog(self.window, 
         gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, 
         gtk.BUTTONS_CLOSE, text)
     md.run()
     md.destroy()
+    gtk.gdk.threads_leave()
 
   def init_install(self, widget, data=None):
     notif.set_text("Instalando...") # marcar como "instalando"
     command = 'gksu "update-flashplugin-nonfree --install --verbose"'
-    p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-    while p.poll() == None:
-      pass # esperar a que termine
-    if p.returncode == 0: # todo bien
+    self.install(self.finishInstall, command)
+
+  def install(self, callback, commands):
+    def runInThread(onExit, arguments):
+      proc = subprocess.Popen(arguments, shell=True)
+      while proc.poll() == None:
+        pass
+
+      onExit(proc.returncode)
+      return True
+      
+    thread = threading.Thread(target=runInThread, args=(callback, commands))
+    thread.daemon = False
+    thread.start()
+
+    return True
+
+  def finishInstall(self, returncode):
+    if returncode == 0: # todo bien
       self.show_success('Flash Player se ha instalado correctamente.')
       self.destroy_window()
     else:
